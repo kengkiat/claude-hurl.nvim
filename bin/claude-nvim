@@ -53,7 +53,10 @@ find_all_sockets() {
   local sockets=()
 
   # NeoVim uses $TMPDIR/nvim.<user>/ on macOS, /run/user/<uid>/ on Linux, or /tmp/
-  local search_dirs=("$tmpdir" "/tmp" "/run/user/$(id -u)" 2>/dev/null)
+  local uid
+  uid="$(id -u 2>/dev/null)" || uid=""
+  local search_dirs=("$tmpdir" "/tmp")
+  [[ -n "$uid" ]] && search_dirs+=("/run/user/$uid")
 
   for dir in "${search_dirs[@]}"; do
     [[ -d "$dir" ]] || continue
@@ -307,7 +310,7 @@ cmd_edit() {
 
   # Cleanup on exit
   cleanup() {
-    rm -rf "$signal_dir"
+    rm -rf "${signal_dir:-}"
   }
   trap cleanup EXIT
 
