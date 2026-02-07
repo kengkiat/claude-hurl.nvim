@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# End-to-end test for claude-nvim: verify that the shell script blocks
+# End-to-end test for claude-hurl: verify that the shell script blocks
 # until the buffer is closed in NeoVim.
 
 PROG="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLAUDE_NVIM="$PROJECT_DIR/bin/claude-nvim"
+CLAUDE_HURL="$PROJECT_DIR/bin/claude-hurl"
 
 # Colors for output
 RED='\033[0;31m'
@@ -48,24 +48,24 @@ if ! command -v nvim &>/dev/null; then
   exit 0
 fi
 
-echo "Running claude-nvim tests..."
+echo "Running claude-hurl tests..."
 echo ""
 
 # ---------------------------------------------------------------------------
 # Test 1: Shell script exists and is executable
 # ---------------------------------------------------------------------------
 echo "Test 1: Shell script is executable"
-if [[ -x "$CLAUDE_NVIM" ]]; then
-  log_pass "bin/claude-nvim is executable"
+if [[ -x "$CLAUDE_HURL" ]]; then
+  log_pass "bin/claude-hurl is executable"
 else
-  log_fail "bin/claude-nvim is not executable"
+  log_fail "bin/claude-hurl is not executable"
 fi
 
 # ---------------------------------------------------------------------------
 # Test 2: --help works
 # ---------------------------------------------------------------------------
 echo "Test 2: --help flag"
-if "$CLAUDE_NVIM" --help &>/dev/null; then
+if "$CLAUDE_HURL" --help &>/dev/null; then
   log_pass "--help exits successfully"
 else
   log_fail "--help failed"
@@ -75,7 +75,7 @@ fi
 # Test 3: --version works
 # ---------------------------------------------------------------------------
 echo "Test 3: --version flag"
-version_output="$("$CLAUDE_NVIM" --version 2>&1)"
+version_output="$("$CLAUDE_HURL" --version 2>&1)"
 if [[ "$version_output" == *"0.1.0"* ]]; then
   log_pass "--version shows version"
 else
@@ -87,8 +87,8 @@ fi
 # ---------------------------------------------------------------------------
 echo "Test 4: End-to-end blocking (open file, close buffer, verify exit)"
 
-SOCK="/tmp/claude-nvim-test-$$.sock"
-TEST_FILE="$(mktemp "${TMPDIR:-/tmp}/claude-nvim-test-XXXXXX.md")"
+SOCK="/tmp/claude-hurl-test-$$.sock"
+TEST_FILE="$(mktemp "${TMPDIR:-/tmp}/claude-hurl-test-XXXXXX.md")"
 cleanup_files+=("$TEST_FILE" "$SOCK")
 
 echo "Initial content" > "$TEST_FILE"
@@ -96,7 +96,7 @@ echo "Initial content" > "$TEST_FILE"
 # Start NeoVim in headless mode with our plugin loaded
 nvim --headless --listen "$SOCK" \
   --cmd "set rtp+=$PROJECT_DIR" \
-  -c "lua require('claude-nvim').setup()" \
+  -c "lua require('claude-hurl').setup()" \
   &>/dev/null &
 nvim_pid=$!
 cleanup_pids+=("$nvim_pid")
@@ -112,8 +112,8 @@ done
 if ! nvim --server "$SOCK" --remote-expr "1+1" &>/dev/null; then
   log_fail "NeoVim failed to start on socket $SOCK"
 else
-  # Run claude-nvim in background — it should block
-  NVIM_CLAUDE_SOCK="$SOCK" "$CLAUDE_NVIM" edit "$TEST_FILE" &
+  # Run claude-hurl in background — it should block
+  NVIM_CLAUDE_SOCK="$SOCK" "$CLAUDE_HURL" edit "$TEST_FILE" &
   editor_pid=$!
   cleanup_pids+=("$editor_pid")
 
@@ -122,9 +122,9 @@ else
 
   # Verify the editor is still running (blocking)
   if kill -0 "$editor_pid" 2>/dev/null; then
-    log_pass "claude-nvim is blocking (waiting for buffer close)"
+    log_pass "claude-hurl is blocking (waiting for buffer close)"
   else
-    log_fail "claude-nvim exited prematurely"
+    log_fail "claude-hurl exited prematurely"
   fi
 
   # Edit the file content via NeoVim
@@ -132,10 +132,10 @@ else
     ":call setline(1, 'Edited content')<CR>:write<CR>" 2>/dev/null || true
   sleep 0.5
 
-  # Close the buffer — this should unblock claude-nvim
+  # Close the buffer — this should unblock claude-hurl
   nvim --server "$SOCK" --remote-send ":bdelete<CR>" 2>/dev/null || true
 
-  # Wait for claude-nvim to exit (with timeout)
+  # Wait for claude-hurl to exit (with timeout)
   for i in $(seq 1 30); do
     if ! kill -0 "$editor_pid" 2>/dev/null; then
       break
@@ -144,9 +144,9 @@ else
   done
 
   if ! kill -0 "$editor_pid" 2>/dev/null; then
-    log_pass "claude-nvim unblocked after buffer close"
+    log_pass "claude-hurl unblocked after buffer close"
   else
-    log_fail "claude-nvim still running after buffer close"
+    log_fail "claude-hurl still running after buffer close"
     kill "$editor_pid" 2>/dev/null || true
   fi
 
@@ -165,19 +165,19 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 5: :ClaudeNvimSend (signal without closing buffer)
+# Test 5: :ClaudeHurlSend (signal without closing buffer)
 # ---------------------------------------------------------------------------
-echo "Test 5: :ClaudeNvimSend (signal done, keep buffer open)"
+echo "Test 5: :ClaudeHurlSend (signal done, keep buffer open)"
 
-SOCK5="/tmp/claude-nvim-test5-$$.sock"
-TEST_FILE5="$(mktemp "${TMPDIR:-/tmp}/claude-nvim-test5-XXXXXX.md")"
+SOCK5="/tmp/claude-hurl-test5-$$.sock"
+TEST_FILE5="$(mktemp "${TMPDIR:-/tmp}/claude-hurl-test5-XXXXXX.md")"
 cleanup_files+=("$TEST_FILE5" "$SOCK5")
 
 echo "Content for send test" > "$TEST_FILE5"
 
 nvim --headless --listen "$SOCK5" \
   --cmd "set rtp+=$PROJECT_DIR" \
-  -c "lua require('claude-nvim').setup()" \
+  -c "lua require('claude-hurl').setup()" \
   &>/dev/null &
 nvim5_pid=$!
 cleanup_pids+=("$nvim5_pid")
@@ -192,14 +192,14 @@ done
 if ! nvim --server "$SOCK5" --remote-expr "1+1" &>/dev/null; then
   log_fail "NeoVim failed to start for test 5"
 else
-  NVIM_CLAUDE_SOCK="$SOCK5" "$CLAUDE_NVIM" edit "$TEST_FILE5" &
+  NVIM_CLAUDE_SOCK="$SOCK5" "$CLAUDE_HURL" edit "$TEST_FILE5" &
   editor5_pid=$!
   cleanup_pids+=("$editor5_pid")
 
   sleep 1
 
-  # Use :ClaudeNvimSend — should unblock without closing buffer
-  nvim --server "$SOCK5" --remote-send ":ClaudeNvimSend<CR>" 2>/dev/null || true
+  # Use :ClaudeHurlSend — should unblock without closing buffer
+  nvim --server "$SOCK5" --remote-send ":ClaudeHurlSend<CR>" 2>/dev/null || true
 
   for i in $(seq 1 30); do
     if ! kill -0 "$editor5_pid" 2>/dev/null; then
@@ -209,16 +209,16 @@ else
   done
 
   if ! kill -0 "$editor5_pid" 2>/dev/null; then
-    log_pass "claude-nvim unblocked after :ClaudeNvimSend"
+    log_pass "claude-hurl unblocked after :ClaudeHurlSend"
   else
-    log_fail "claude-nvim still running after :ClaudeNvimSend"
+    log_fail "claude-hurl still running after :ClaudeHurlSend"
     kill "$editor5_pid" 2>/dev/null || true
   fi
 
   # Verify buffer is still open (not deleted)
   buf_count="$(nvim --server "$SOCK5" --remote-expr "len(getbufinfo({'buflisted':1}))" 2>/dev/null)" || buf_count="0"
   if [[ "$buf_count" -ge 1 ]]; then
-    log_pass "Buffer still open after :ClaudeNvimSend"
+    log_pass "Buffer still open after :ClaudeHurlSend"
   else
     log_fail "Buffer was unexpectedly closed"
   fi

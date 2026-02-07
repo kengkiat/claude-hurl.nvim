@@ -13,16 +13,16 @@ function M.open_and_signal(file_path, signal_path, config)
     return
   end
 
-  -- Track this buffer's signal path (for :ClaudeNvimSend)
+  -- Track this buffer's signal path (for :ClaudeHurlSend)
   M.active[bufnr] = signal_path
 
   -- Notification
   if config.notify then
-    vim.notify("Claude Code waiting — :ClaudeNvimSend when done", vim.log.levels.INFO)
+    vim.notify("Claude Code waiting — :ClaudeHurlSend when done", vim.log.levels.INFO)
   end
 
   -- Autocmd group (unique per buffer)
-  local group = vim.api.nvim_create_augroup("ClaudeNvim_" .. bufnr, { clear = true })
+  local group = vim.api.nvim_create_augroup("ClaudeHurl_" .. bufnr, { clear = true })
 
   local function signal_done(reason)
     if M.active[bufnr] then
@@ -59,7 +59,7 @@ function M.open_and_signal(file_path, signal_path, config)
   })
 end
 
---- Called by :ClaudeNvimSend and :ClaudeNvimSendClose
+--- Called by :ClaudeHurlSend and :ClaudeHurlSendClose
 function M.send_current(close_buffer)
   local bufnr = vim.api.nvim_get_current_buf()
   local signal_path = M.active[bufnr]
@@ -79,7 +79,7 @@ function M.send_current(close_buffer)
   M.active[bufnr] = nil
 
   -- Clean up autocmds for this buffer
-  pcall(vim.api.nvim_del_augroup_by_name, "ClaudeNvim_" .. bufnr)
+  pcall(vim.api.nvim_del_augroup_by_name, "ClaudeHurl_" .. bufnr)
 
   if close_buffer then
     vim.cmd("bdelete")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# claude-nvim — $EDITOR shim that opens files in an existing NeoVim instance
+# claude-hurl — $EDITOR shim that opens files in an existing NeoVim instance
 # and blocks until editing is done (via FIFO signaling).
 
 PROG="$(basename "$0")"
@@ -13,7 +13,7 @@ VERSION="0.1.0"
 
 die() { echo "$PROG: error: $*" >&2; exit 1; }
 warn() { echo "$PROG: $*" >&2; }
-debug() { [[ -z "${CLAUDE_NVIM_DEBUG:-}" ]] || echo "$PROG: [debug] $*" >&2; }
+debug() { [[ -z "${CLAUDE_HURL_DEBUG:-}" ]] || echo "$PROG: [debug] $*" >&2; }
 
 usage() {
   cat <<EOF
@@ -29,8 +29,8 @@ Usage:
 Environment:
   NVIM_CLAUDE_SOCK            Explicit NeoVim socket path
   NVIM_LISTEN_ADDRESS         Fallback socket path (NeoVim legacy)
-  CLAUDE_NVIM_STRATEGY        Discovery strategy: auto|env|tmux|cwd|recent (default: auto)
-  CLAUDE_NVIM_DEBUG           Set to 1 for debug output
+  CLAUDE_HURL_STRATEGY        Discovery strategy: auto|env|tmux|cwd|recent (default: auto)
+  CLAUDE_HURL_DEBUG           Set to 1 for debug output
 EOF
 }
 
@@ -38,7 +38,7 @@ EOF
 # Socket discovery
 # ---------------------------------------------------------------------------
 
-STRATEGY="${CLAUDE_NVIM_STRATEGY:-auto}"
+STRATEGY="${CLAUDE_HURL_STRATEGY:-auto}"
 
 # Verify a socket is alive by querying NeoVim
 verify_socket() {
@@ -304,7 +304,7 @@ cmd_edit() {
 
   # Create FIFO for signaling
   local signal_dir
-  signal_dir="$(mktemp -d "${TMPDIR:-/tmp}/claude-nvim.XXXXXX")"
+  signal_dir="$(mktemp -d "${TMPDIR:-/tmp}/claude-hurl.XXXXXX")"
   local signal_file="$signal_dir/done"
   mkfifo "$signal_file"
 
@@ -323,9 +323,9 @@ cmd_edit() {
 
   # Send command to NeoVim
   # <C-\><C-n> ensures normal mode first
-  debug "Sending :ClaudeNvimOpen $escaped_file $escaped_signal"
+  debug "Sending :ClaudeHurlOpen $escaped_file $escaped_signal"
   nvim --server "$sock" --remote-send \
-    "<C-\\><C-n>:ClaudeNvimOpen $escaped_file $escaped_signal<CR>" \
+    "<C-\\><C-n>:ClaudeHurlOpen $escaped_file $escaped_signal<CR>" \
     || die "Failed to send command to NeoVim at $sock"
 
   # Watchdog: check if NeoVim is still alive every 5 seconds

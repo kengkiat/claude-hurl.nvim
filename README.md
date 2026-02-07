@@ -1,4 +1,4 @@
-# claude-nvim
+# claude-hurl.nvim
 
 Open Claude Code prompts (Ctrl+G) in an **existing** NeoVim instance instead of spawning a new one.
 
@@ -8,10 +8,10 @@ When you press Ctrl+G in Claude Code, it invokes `$EDITOR <tempfile>`. By defaul
 
 ```
 Ctrl+G in Claude Code
-  → $EDITOR (bin/claude-nvim) discovers your NeoVim socket
-  → Opens file in existing NeoVim via :ClaudeNvimOpen
+  → $EDITOR (bin/claude-hurl) discovers your NeoVim socket
+  → Opens file in existing NeoVim via :ClaudeHurlOpen
   → Blocks on a FIFO until you signal "done"
-  → You edit, then :ClaudeNvimSend or :bd
+  → You edit, then :ClaudeHurlSend or :bd
   → Shell unblocks → Claude Code reads your edited prompt
 ```
 
@@ -21,8 +21,8 @@ Ctrl+G in Claude Code
 
 ```lua
 {
-  "username/claude-nvim",
-  build = "ln -sf $(pwd)/bin/claude-nvim ~/.local/bin/claude-nvim",
+  "username/claude-hurl.nvim",
+  build = "ln -sf $(pwd)/bin/claude-hurl ~/.local/bin/claude-hurl",
   opts = {
     -- listen_address = "/tmp/nvim-claude.sock",  -- optional, for non-tmux setups
   },
@@ -32,20 +32,20 @@ Ctrl+G in Claude Code
 Then add to your shell config (`.zshrc`, `.bashrc`, etc.):
 
 ```bash
-export EDITOR='claude-nvim'
+export EDITOR='claude-hurl'
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/username/claude-nvim ~/.config/nvim/pack/plugins/start/claude-nvim
-ln -sf ~/.config/nvim/pack/plugins/start/claude-nvim/bin/claude-nvim ~/.local/bin/claude-nvim
+git clone https://github.com/username/claude-hurl.nvim ~/.config/nvim/pack/plugins/start/claude-hurl.nvim
+ln -sf ~/.config/nvim/pack/plugins/start/claude-hurl.nvim/bin/claude-hurl ~/.local/bin/claude-hurl
 ```
 
 Add to your NeoVim config:
 
 ```lua
-require("claude-nvim").setup()
+require("claude-hurl").setup()
 ```
 
 ## Usage
@@ -54,24 +54,24 @@ require("claude-nvim").setup()
 
 | Command | Behavior |
 |---------|----------|
-| `:ClaudeNvimSend` | Save + signal done to Claude. Buffer stays open. |
-| `:ClaudeNvimSendClose` | Save + signal done + close buffer. |
+| `:ClaudeHurlSend` | Save + signal done to Claude. Buffer stays open. |
+| `:ClaudeHurlSendClose` | Save + signal done + close buffer. |
 | `:bd` / `:wq` | Also signals done (fallback via autocmd). |
 
 ### Recommended Keybinding
 
 ```lua
-vim.keymap.set("n", "<leader>cs", "<cmd>ClaudeNvimSend<cr>", { desc = "Send to Claude Code" })
+vim.keymap.set("n", "<leader>cs", "<cmd>ClaudeHurlSend<cr>", { desc = "Send to Claude Code" })
 ```
 
 ### Shell Subcommands
 
 ```bash
-claude-nvim <file>           # Open in existing NeoVim, block until done
-claude-nvim edit <file>      # Same as above
-claude-nvim list             # List all discoverable NeoVim sockets
-claude-nvim status           # Show which socket would be selected and why
-claude-nvim --fallback-nvim <file>  # Fall back to new NeoVim if none found
+claude-hurl <file>           # Open in existing NeoVim, block until done
+claude-hurl edit <file>      # Same as above
+claude-hurl list             # List all discoverable NeoVim sockets
+claude-hurl status           # Show which socket would be selected and why
+claude-hurl --fallback-nvim <file>  # Fall back to new NeoVim if none found
 ```
 
 ## Socket Discovery
@@ -83,7 +83,7 @@ The shell script finds your NeoVim instance using these strategies (in priority 
 3. **CWD match**: Finds NeoVim with the same working directory
 4. **Most recent**: Falls back to the most recently created NeoVim socket
 
-Override with: `CLAUDE_NVIM_STRATEGY=tmux|env|cwd|recent|auto`
+Override with: `CLAUDE_HURL_STRATEGY=tmux|env|cwd|recent|auto`
 
 ## Setup Recipes
 
@@ -92,20 +92,20 @@ Override with: `CLAUDE_NVIM_STRATEGY=tmux|env|cwd|recent|auto`
 If you use tmux with NeoVim in one pane and Claude Code in another, it just works:
 
 ```bash
-export EDITOR='claude-nvim'
+export EDITOR='claude-hurl'
 ```
 
 ### Non-tmux with explicit socket
 
 ```lua
 -- In NeoVim config:
-require("claude-nvim").setup({ listen_address = "/tmp/nvim-claude.sock" })
+require("claude-hurl").setup({ listen_address = "/tmp/nvim-claude.sock" })
 ```
 
 ```bash
 # In .zshrc:
 export NVIM_CLAUDE_SOCK="/tmp/nvim-claude.sock"
-export EDITOR='claude-nvim'
+export EDITOR='claude-hurl'
 ```
 
 ### Multiple projects
@@ -127,7 +127,7 @@ Or with tmux, just use separate windows — automatic.
 ## Configuration
 
 ```lua
-require("claude-nvim").setup({
+require("claude-hurl").setup({
   listen_address = nil,    -- Start NeoVim server on this path (for non-tmux)
   open_cmd = "drop",       -- How to open: "drop", "edit", "split", "vsplit", "tabedit"
   auto_write = true,       -- Auto-save buffer before signaling
@@ -139,20 +139,20 @@ require("claude-nvim").setup({
 
 ```bash
 # Check which NeoVim would be selected:
-claude-nvim status
+claude-hurl status
 
 # List all sockets:
-claude-nvim list
+claude-hurl list
 
 # Enable debug output:
-CLAUDE_NVIM_DEBUG=1 claude-nvim edit /tmp/test.md
+CLAUDE_HURL_DEBUG=1 claude-hurl edit /tmp/test.md
 ```
 
 ## Relationship with claudecode.nvim
 
 This plugin complements [claudecode.nvim](https://github.com/coder/claudecode.nvim):
 
-- **claude-nvim** (this plugin): Handles Ctrl+G prompt editing in an existing NeoVim
+- **claude-hurl.nvim** (this plugin): Handles Ctrl+G prompt editing in an existing NeoVim
 - **claudecode.nvim**: IDE integration (selections, diffs, file context)
 
 They can be used independently or together.
