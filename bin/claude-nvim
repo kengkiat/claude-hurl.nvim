@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-nvim — $EDITOR shim that opens files in an existing NeoVim instance
+# and blocks until editing is done (via FIFO signaling).
+
+PROG="$(basename "$0")"
+VERSION="0.1.0"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() { echo "$PROG: error: $*" >&2; exit 1; }
+warn() { echo "$PROG: $*" >&2; }
+debug() { [[ -z "${CLAUDE_NVIM_DEBUG:-}" ]] || echo "$PROG: [debug] $*" >&2; }
+
+usage() {
+  cat <<EOF
+Usage:
+  $PROG <file>                Open file in existing NeoVim (default: edit)
+  $PROG edit <file>           Same as above
+  $PROG list                  List discoverable NeoVim sockets
+  $PROG status                Show which socket would be selected and why
+  $PROG --fallback-nvim <file>  Spawn a new NeoVim if no existing instance found
+  $PROG --version             Show version
+  $PROG --help                Show this help
+
+Environment:
+  NVIM_CLAUDE_SOCK            Explicit NeoVim socket path
+  NVIM_LISTEN_ADDRESS         Fallback socket path (NeoVim legacy)
+  CLAUDE_NVIM_STRATEGY        Discovery strategy: auto|env|tmux|cwd|recent (default: auto)
+  CLAUDE_NVIM_DEBUG           Set to 1 for debug output
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Socket discovery
+# ---------------------------------------------------------------------------
+
+STRATEGY="${CLAUDE_NVIM_STRATEGY:-auto}"
+
+# Verify a socket is alive by querying NeoVim
+verify_socket() {
+  local sock="$1"
+  [[ -S "$sock" ]] || return 1
+  nvim --server "$sock" --remote-expr "1+1" &>/dev/null
+}
+
+# Find all NeoVim sockets in standard locations
+find_all_sockets() {
+  local tmpdir="${TMPDIR:-/tmp}"
+  local sockets=()
+
+  # NeoVim uses $TMPDIR/nvim.<user>/ on macOS, /run/user/<uid>/ on Linux, or /tmp/
+  local search_dirs=("$tmpdir" "/tmp" "/run/user/$(id -u)" 2>/dev/null)
+
+  for dir in "${search_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    while IFS= read -r -d '' sock; do
+      sockets+=("$sock")
+    done < <(find "$dir" -name 'nvim.*' -type s -print0 2>/dev/null || true)
+  done
+
+  # Also check XDG runtime dir
+  local xdg_runtime="${XDG_RUNTIME_DIR:-}"
+  if [[ -n "$xdg_runtime" && -d "$xdg_runtime" ]]; then
+    while IFS= read -r -d '' sock; do
+      sockets+=("$sock")
+    done < <(find "$xdg_runtime" -name 'nvim.*' -type s -print0 2>/dev/null || true)
+  fi
+
+  # Deduplicate
+  printf '%s\n' "${sockets[@]}" | sort -u
+}
+
+# Extract PID from NeoVim socket path (format: nvim.<user>/<random>/<appname>.<PID>.0)
+pid_from_socket() {
+  local sock="$1"
+  # Try to extract PID from the socket filename
+  local basename
+  basename="$(basename "$sock")"
+  # Pattern: something.PID.0 or nvim.PID.0
+  if [[ "$basename" =~ \.([0-9]+)\.[0-9]+$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Strategy: env — use explicit socket from environment
+discover_env() {
+  local sock="${NVIM_CLAUDE_SOCK:-${NVIM_LISTEN_ADDRESS:-}}"
+  if [[ -n "$sock" ]]; then
+    if verify_socket "$sock"; then
+      echo "$sock"
+      return 0
+    else
+      warn "Socket from env var not responding: $sock"
+    fi
+  fi
+  return 1
+}
+
+# Strategy: tmux — find NeoVim in a sibling pane
+discover_tmux() {
+  [[ -n "${TMUX:-}" ]] || return 1
+  command -v tmux &>/dev/null || return 1
+
+  debug "Searching tmux sibling panes for NeoVim"
+
+  local pane_pids
+  pane_pids="$(tmux list-panes -F '#{pane_pid}' 2>/dev/null)" || return 1
+
+  for pane_pid in $pane_pids; do
+    # Find nvim process that is a child of this pane's shell
+    local nvim_pids
+    nvim_pids="$(pgrep -P "$pane_pid" -x nvim 2>/dev/null)" || continue
+
+    for nvim_pid in $nvim_pids; do
+      debug "Found nvim PID $nvim_pid in tmux pane (parent PID $pane_pid)"
+      # Match this PID to a socket
+      while IFS= read -r sock; do
+        [[ -n "$sock" ]] || continue
+        local sock_pid
+        sock_pid="$(pid_from_socket "$sock")"
+        if [[ "$sock_pid" == "$nvim_pid" ]] && verify_socket "$sock"; then
+          debug "Matched socket: $sock"
+          echo "$sock"
+          return 0
+        fi
+      done < <(find_all_sockets)
+    done
+  done
+
+  return 1
+}
+
+# Strategy: cwd — find NeoVim with matching working directory
+discover_cwd() {
+  local target_cwd
+  target_cwd="$(pwd -P)"
+  debug "Searching for NeoVim with CWD: $target_cwd"
+
+  while IFS= read -r sock; do
+    [[ -n "$sock" ]] || continue
+    if verify_socket "$sock"; then
+      local nvim_cwd
+      nvim_cwd="$(nvim --server "$sock" --remote-expr "getcwd()" 2>/dev/null)" || continue
+      # Resolve symlinks for comparison
+      nvim_cwd="$(cd "$nvim_cwd" 2>/dev/null && pwd -P)" || continue
+      if [[ "$nvim_cwd" == "$target_cwd" ]]; then
+        debug "CWD match: $sock (cwd: $nvim_cwd)"
+        echo "$sock"
+        return 0
+      fi
+    fi
+  done < <(find_all_sockets)
+
+  return 1
+}
+
+# Strategy: recent — use the most recently created NeoVim socket
+discover_recent() {
+  debug "Falling back to most recent NeoVim socket"
+
+  local best_sock=""
+  local best_time=0
+
+  while IFS= read -r sock; do
+    [[ -n "$sock" ]] || continue
+    if verify_socket "$sock"; then
+      local mtime
+      # macOS stat vs Linux stat
+      mtime="$(stat -f %m "$sock" 2>/dev/null || stat -c %Y "$sock" 2>/dev/null)" || continue
+      if (( mtime > best_time )); then
+        best_time="$mtime"
+        best_sock="$sock"
+      fi
+    fi
+  done < <(find_all_sockets)
+
+  if [[ -n "$best_sock" ]]; then
+    debug "Most recent socket: $best_sock"
+    echo "$best_sock"
+    return 0
+  fi
+
+  return 1
+}
+
+# Run discovery in priority order based on strategy
+discover_socket() {
+  case "$STRATEGY" in
+    env)    discover_env ;;
+    tmux)   discover_tmux ;;
+    cwd)    discover_cwd ;;
+    recent) discover_recent ;;
+    auto)
+      discover_env && return 0
+      discover_tmux && return 0
+      discover_cwd && return 0
+      discover_recent && return 0
+      return 1
+      ;;
+    *) die "Unknown strategy: $STRATEGY" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+cmd_list() {
+  echo "Discoverable NeoVim sockets:"
+  echo ""
+  while IFS= read -r sock; do
+    [[ -n "$sock" ]] || continue
+    local status="DEAD"
+    local info=""
+    if verify_socket "$sock"; then
+      status="ALIVE"
+      local cwd
+      cwd="$(nvim --server "$sock" --remote-expr "getcwd()" 2>/dev/null)" || cwd="(unknown)"
+      local pid
+      pid="$(pid_from_socket "$sock")"
+      info="  PID: ${pid:-unknown}  CWD: $cwd"
+    fi
+    echo "  [$status] $sock"
+    [[ -z "$info" ]] || echo "         $info"
+  done < <(find_all_sockets)
+}
+
+cmd_status() {
+  echo "Strategy: $STRATEGY"
+  echo ""
+
+  # Check env
+  local env_sock="${NVIM_CLAUDE_SOCK:-${NVIM_LISTEN_ADDRESS:-}}"
+  if [[ -n "$env_sock" ]]; then
+    echo "Env socket: $env_sock"
+    if verify_socket "$env_sock"; then
+      echo "  Status: ALIVE (would use this)"
+      return
+    else
+      echo "  Status: NOT RESPONDING"
+    fi
+  else
+    echo "Env socket: (not set)"
+  fi
+
+  # Check tmux
+  if [[ -n "${TMUX:-}" ]]; then
+    echo "tmux: IN SESSION"
+    local tmux_sock
+    if tmux_sock="$(discover_tmux)"; then
+      echo "  Found: $tmux_sock (would use this)"
+      return
+    else
+      echo "  No NeoVim found in sibling panes"
+    fi
+  else
+    echo "tmux: NOT IN TMUX"
+  fi
+
+  # Check cwd
+  local cwd_sock
+  if cwd_sock="$(discover_cwd)"; then
+    echo "CWD match: $cwd_sock (would use this)"
+    return
+  else
+    echo "CWD match: no NeoVim with matching CWD"
+  fi
+
+  # Check recent
+  local recent_sock
+  if recent_sock="$(discover_recent)"; then
+    echo "Most recent: $recent_sock (would use this)"
+    return
+  else
+    echo "Most recent: no live sockets found"
+  fi
+
+  echo ""
+  echo "Result: NO NEOVIM FOUND"
+}
+
+cmd_edit() {
+  local file="$1"
+  local fallback="${2:-}"
+
+  # Discover socket
+  local sock
+  if ! sock="$(discover_socket)"; then
+    if [[ "$fallback" == "fallback" ]]; then
+      warn "No existing NeoVim found, spawning new instance"
+      exec nvim "$file"
+    fi
+    die "No NeoVim instance found. Use '$PROG status' to debug, or '$PROG --fallback-nvim $file' to spawn a new instance."
+  fi
+
+  debug "Using socket: $sock"
+
+  # Create FIFO for signaling
+  local signal_dir
+  signal_dir="$(mktemp -d "${TMPDIR:-/tmp}/claude-nvim.XXXXXX")"
+  local signal_file="$signal_dir/done"
+  mkfifo "$signal_file"
+
+  # Cleanup on exit
+  cleanup() {
+    rm -rf "$signal_dir"
+  }
+  trap cleanup EXIT
+
+  # Escape file path and signal path for NeoVim command line
+  # We need to escape spaces, backslashes, and special characters
+  local escaped_file
+  escaped_file="$(printf '%s' "$file" | sed 's/\\/\\\\/g; s/ /\\ /g')"
+  local escaped_signal
+  escaped_signal="$(printf '%s' "$signal_file" | sed 's/\\/\\\\/g; s/ /\\ /g')"
+
+  # Send command to NeoVim
+  # <C-\><C-n> ensures normal mode first
+  debug "Sending :ClaudeNvimOpen $escaped_file $escaped_signal"
+  nvim --server "$sock" --remote-send \
+    "<C-\\><C-n>:ClaudeNvimOpen $escaped_file $escaped_signal<CR>" \
+    || die "Failed to send command to NeoVim at $sock"
+
+  # Watchdog: check if NeoVim is still alive every 5 seconds
+  (
+    while true; do
+      sleep 5
+      if ! verify_socket "$sock"; then
+        warn "NeoVim appears to have exited"
+        # Write to FIFO to unblock the main process
+        echo "watchdog" > "$signal_file" 2>/dev/null || true
+        break
+      fi
+    done
+  ) &
+  local watchdog_pid=$!
+
+  # Block until plugin writes to FIFO
+  local reason
+  reason="$(read -r line < "$signal_file" && echo "$line")" || reason="error"
+
+  # Kill watchdog
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+
+  debug "Unblocked with reason: $reason"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+  case "${1:-}" in
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --version)
+      echo "$PROG $VERSION"
+      exit 0
+      ;;
+    list)
+      cmd_list
+      exit 0
+      ;;
+    status)
+      cmd_status
+      exit 0
+      ;;
+    edit)
+      [[ -n "${2:-}" ]] || die "Usage: $PROG edit <file>"
+      cmd_edit "$2"
+      ;;
+    --fallback-nvim)
+      [[ -n "${2:-}" ]] || die "Usage: $PROG --fallback-nvim <file>"
+      cmd_edit "$2" "fallback"
+      ;;
+    -*)
+      die "Unknown option: $1. Use --help for usage."
+      ;;
+    *)
+      # Default: treat first arg as file path (bare invocation as $EDITOR)
+      [[ -n "${1:-}" ]] || { usage; exit 1; }
+      cmd_edit "$1"
+      ;;
+  esac
+}
+
+main "$@"
