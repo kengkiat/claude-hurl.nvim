@@ -56,31 +56,6 @@ alias claude='VISUAL=$(echo ~/.local/share/lazy/claude-hurl.nvim/bin/claude-hurl
 > **Note:** Adjust the path if your lazy.nvim plugin directory is different.
 > The default is `~/.local/share/nvim/lazy/claude-hurl.nvim/bin/claude-hurl`.
 
-### NVIM_APPNAME users (e.g. LazyVim)
-
-If you launch NeoVim with a custom `NVIM_APPNAME`:
-
-```bash
-# e.g. EDITOR="env NVIM_APPNAME=lazyvim nvim"
-```
-
-Set `CLAUDE_HURL_NVIM` so the fallback spawn uses your config:
-
-```bash
-alias claude='VISUAL=~/.local/share/lazyvim/lazy/claude-hurl.nvim/bin/claude-hurl CLAUDE_HURL_NVIM="env NVIM_APPNAME=lazyvim nvim" claude'
-```
-
-Or in `~/.claude/settings.json`:
-
-```json
-{
-  "env": {
-    "VISUAL": "~/.local/share/lazyvim/lazy/claude-hurl.nvim/bin/claude-hurl",
-    "CLAUDE_HURL_NVIM": "env NVIM_APPNAME=lazyvim nvim"
-  }
-}
-```
-
 ### Manual
 
 ```bash
