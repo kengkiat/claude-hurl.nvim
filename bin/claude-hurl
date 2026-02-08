@@ -29,6 +29,8 @@ Usage:
 Environment:
   NVIM_CLAUDE_SOCK            Explicit NeoVim socket path
   NVIM_LISTEN_ADDRESS         Fallback socket path (NeoVim legacy)
+  CLAUDE_HURL_NVIM            Command to launch NeoVim for fallback (default: nvim)
+                              e.g. "env NVIM_APPNAME=lazyvim nvim"
   CLAUDE_HURL_STRATEGY        Discovery strategy: auto|env|tmux|cwd|recent (default: auto)
   CLAUDE_HURL_DEBUG           Set to 1 for debug output
 EOF
@@ -39,6 +41,7 @@ EOF
 # ---------------------------------------------------------------------------
 
 STRATEGY="${CLAUDE_HURL_STRATEGY:-auto}"
+NVIM_CMD="${CLAUDE_HURL_NVIM:-nvim}"
 
 # Verify a socket is alive by querying NeoVim
 verify_socket() {
@@ -62,7 +65,7 @@ find_all_sockets() {
     [[ -d "$dir" ]] || continue
     while IFS= read -r -d '' sock; do
       sockets+=("$sock")
-    done < <(find "$dir" -name 'nvim.*' -type s -print0 2>/dev/null || true)
+    done < <(find "$dir" -path '*/nvim.*' -type s -print0 2>/dev/null || true)
   done
 
   # Also check XDG runtime dir
@@ -70,7 +73,7 @@ find_all_sockets() {
   if [[ -n "$xdg_runtime" && -d "$xdg_runtime" ]]; then
     while IFS= read -r -d '' sock; do
       sockets+=("$sock")
-    done < <(find "$xdg_runtime" -name 'nvim.*' -type s -print0 2>/dev/null || true)
+    done < <(find "$xdg_runtime" -path '*/nvim.*' -type s -print0 2>/dev/null || true)
   fi
 
   # Deduplicate
@@ -295,7 +298,7 @@ cmd_edit() {
   if ! sock="$(discover_socket)"; then
     if [[ "$fallback" == "fallback" ]]; then
       warn "No existing NeoVim found, spawning new instance"
-      exec nvim "$file"
+      exec $NVIM_CMD "$file"
     fi
     die "No NeoVim instance found. Use '$PROG status' to debug, or '$PROG --fallback-nvim $file' to spawn a new instance."
   fi
