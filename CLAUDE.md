@@ -4,17 +4,21 @@ Open Claude Code prompts (Ctrl+G) in an existing NeoVim instance instead of spaw
 
 ## Architecture
 
-- **`bin/claude-hurl`** — Shell script used as `$EDITOR`. Discovers NeoVim socket, creates a FIFO, calls `:ClaudeHurlOpen` via `--remote-send`, blocks on FIFO read.
+- **`bin/claude-hurl`** — Shell script used as `$VISUAL`. Discovers NeoVim socket, creates a FIFO, calls `:ClaudeHurlOpen` via `--remote-send`, blocks on FIFO read.
 - **`lua/claude-hurl/init.lua`** — Plugin entry: `setup()`, user commands, config.
 - **`lua/claude-hurl/signal.lua`** — Buffer lifecycle management + FIFO signaling.
 
 ## Flow
 
-1. Claude Code calls `$EDITOR <tempfile>`
+1. Claude Code Ctrl+G calls `$VISUAL <tempfile>`
 2. Shell script discovers NeoVim socket, creates FIFO, sends `:ClaudeHurlOpen <file> <signal_path>`
 3. Plugin opens file, sets autocmds for buffer close
 4. User edits, then `:ClaudeHurlSend` or `:bd`
 5. Plugin writes to FIFO → shell unblocks → Claude Code reads edited file
+
+## Key Finding
+
+Claude Code uses `$VISUAL` (not `$EDITOR`) for Ctrl+G prompt editing. The `$EDITOR` env var and `settings.json` `env.EDITOR` do not affect Ctrl+G.
 
 ## Conventions
 
@@ -22,6 +26,7 @@ Open Claude Code prompts (Ctrl+G) in an existing NeoVim instance instead of spaw
 - Lua: NeoVim 0.9+ APIs, no external dependencies
 - Socket discovery priority: env var → tmux sibling → CWD match → most recent
 - All temp files cleaned up via `trap EXIT`
+- `CLAUDE_HURL_NVIM` env var controls the fallback nvim command (for NVIM_APPNAME users)
 
 ## Commands
 

@@ -1,19 +1,25 @@
 # claude-hurl.nvim
 
-Open Claude Code prompts (Ctrl+G) in an **existing** NeoVim instance instead of spawning a new one.
+Open Claude Code's editor (Ctrl+G) in an **existing** NeoVim instance instead of spawning a new one.
 
-When you press Ctrl+G in Claude Code, it invokes `$EDITOR <tempfile>`. By default this spawns a new editor. This plugin opens the file in your already-running NeoVim and blocks until you're done editing.
+When you press Ctrl+G in Claude Code, it opens `$VISUAL <tempfile>` for multi-line prompt editing. By default this spawns a brand-new editor. This plugin routes that file to your already-running NeoVim and blocks until you're done editing.
 
 ## How It Works
 
 ```
 Ctrl+G in Claude Code
-  → $EDITOR (bin/claude-hurl) discovers your NeoVim socket
+  → $VISUAL (bin/claude-hurl) discovers your NeoVim socket
   → Opens file in existing NeoVim via :ClaudeHurlOpen
   → Blocks on a FIFO until you signal "done"
   → You edit, then :ClaudeHurlSend or :bd
   → Shell unblocks → Claude Code reads your edited prompt
 ```
+
+## Requirements
+
+- NeoVim 0.9+
+- Claude Code CLI
+- bash 4+
 
 ## Installation
 
@@ -21,31 +27,77 @@ Ctrl+G in Claude Code
 
 ```lua
 {
-  "username/claude-hurl.nvim",
-  build = "ln -sf $(pwd)/bin/claude-hurl ~/.local/bin/claude-hurl",
-  opts = {
-    -- listen_address = "/tmp/nvim-claude.sock",  -- optional, for non-tmux setups
-  },
+  "kengkiat/claude-hurl.nvim",
+  config = function()
+    require("claude-hurl").setup()
+  end,
 }
 ```
 
-Then add to your shell config (`.zshrc`, `.bashrc`, etc.):
+Then set `$VISUAL` so Claude Code uses the plugin's shell script as its editor.
+
+**Option A** — Shell alias (scoped to Claude Code only):
 
 ```bash
-export EDITOR='claude-hurl'
+# In .zshrc / .bashrc:
+alias claude='VISUAL=$(echo ~/.local/share/lazy/claude-hurl.nvim/bin/claude-hurl) claude'
+```
+
+**Option B** — Claude Code settings (`~/.claude/settings.json`):
+
+```json
+{
+  "env": {
+    "VISUAL": "~/.local/share/lazy/claude-hurl.nvim/bin/claude-hurl"
+  }
+}
+```
+
+> **Note:** Adjust the path if your lazy.nvim plugin directory is different.
+> The default is `~/.local/share/nvim/lazy/claude-hurl.nvim/bin/claude-hurl`.
+
+### NVIM_APPNAME users (e.g. LazyVim)
+
+If you launch NeoVim with a custom `NVIM_APPNAME`:
+
+```bash
+# e.g. EDITOR="env NVIM_APPNAME=lazyvim nvim"
+```
+
+Set `CLAUDE_HURL_NVIM` so the fallback spawn uses your config:
+
+```bash
+alias claude='VISUAL=~/.local/share/lazyvim/lazy/claude-hurl.nvim/bin/claude-hurl CLAUDE_HURL_NVIM="env NVIM_APPNAME=lazyvim nvim" claude'
+```
+
+Or in `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "VISUAL": "~/.local/share/lazyvim/lazy/claude-hurl.nvim/bin/claude-hurl",
+    "CLAUDE_HURL_NVIM": "env NVIM_APPNAME=lazyvim nvim"
+  }
+}
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/username/claude-hurl.nvim ~/.config/nvim/pack/plugins/start/claude-hurl.nvim
-ln -sf ~/.config/nvim/pack/plugins/start/claude-hurl.nvim/bin/claude-hurl ~/.local/bin/claude-hurl
+git clone https://github.com/kengkiat/claude-hurl.nvim \
+  ~/.config/nvim/pack/plugins/start/claude-hurl.nvim
 ```
 
 Add to your NeoVim config:
 
 ```lua
 require("claude-hurl").setup()
+```
+
+Then set VISUAL to the script's full path:
+
+```bash
+alias claude='VISUAL=~/.config/nvim/pack/plugins/start/claude-hurl.nvim/bin/claude-hurl claude'
 ```
 
 ## Usage
@@ -67,10 +119,9 @@ vim.keymap.set("n", "<leader>cs", "<cmd>ClaudeHurlSend<cr>", { desc = "Send to C
 ### Shell Subcommands
 
 ```bash
-claude-hurl <file>           # Open in existing NeoVim, block until done
-claude-hurl edit <file>      # Same as above
-claude-hurl list             # List all discoverable NeoVim sockets
-claude-hurl status           # Show which socket would be selected and why
+claude-hurl <file>                  # Open in existing NeoVim, block until done
+claude-hurl list                    # List all discoverable NeoVim sockets
+claude-hurl status                  # Show which socket would be selected
 claude-hurl --fallback-nvim <file>  # Fall back to new NeoVim if none found
 ```
 
@@ -78,21 +129,21 @@ claude-hurl --fallback-nvim <file>  # Fall back to new NeoVim if none found
 
 The shell script finds your NeoVim instance using these strategies (in priority order):
 
-1. **Environment variable**: `$NVIM_CLAUDE_SOCK` or `$NVIM_LISTEN_ADDRESS`
-2. **tmux sibling**: Finds NeoVim running in a sibling pane of the same tmux window
-3. **CWD match**: Finds NeoVim with the same working directory
-4. **Most recent**: Falls back to the most recently created NeoVim socket
+1. **Environment variable** — `$NVIM_CLAUDE_SOCK` or `$NVIM_LISTEN_ADDRESS`
+2. **tmux sibling** — NeoVim running in a sibling pane of the same tmux window
+3. **CWD match** — NeoVim with the same working directory
+4. **Most recent** — Most recently created NeoVim socket
 
-Override with: `CLAUDE_HURL_STRATEGY=tmux|env|cwd|recent|auto`
+Override with: `CLAUDE_HURL_STRATEGY=env|tmux|cwd|recent|auto`
 
 ## Setup Recipes
 
 ### tmux (zero config)
 
-If you use tmux with NeoVim in one pane and Claude Code in another, it just works:
+If you use tmux with NeoVim in one pane and Claude Code in another, socket discovery finds it automatically:
 
 ```bash
-export EDITOR='claude-hurl'
+alias claude='VISUAL=/path/to/claude-hurl.nvim/bin/claude-hurl claude'
 ```
 
 ### Non-tmux with explicit socket
@@ -105,7 +156,7 @@ require("claude-hurl").setup({ listen_address = "/tmp/nvim-claude.sock" })
 ```bash
 # In .zshrc:
 export NVIM_CLAUDE_SOCK="/tmp/nvim-claude.sock"
-export EDITOR='claude-hurl'
+alias claude='VISUAL=/path/to/claude-hurl.nvim/bin/claude-hurl claude'
 ```
 
 ### Multiple projects
@@ -122,7 +173,7 @@ nvim --listen /tmp/nvim-project2.sock
 NVIM_CLAUDE_SOCK=/tmp/nvim-project2.sock claude
 ```
 
-Or with tmux, just use separate windows — automatic.
+Or with tmux, just use separate windows — discovery is automatic.
 
 ## Configuration
 
@@ -135,24 +186,24 @@ require("claude-hurl").setup({
 })
 ```
 
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `NVIM_CLAUDE_SOCK` | Explicit NeoVim socket path |
+| `NVIM_LISTEN_ADDRESS` | Fallback socket path (NeoVim legacy) |
+| `CLAUDE_HURL_NVIM` | Command to launch NeoVim for fallback (default: `nvim`) |
+| `CLAUDE_HURL_STRATEGY` | Discovery strategy: `auto\|env\|tmux\|cwd\|recent` |
+| `CLAUDE_HURL_DEBUG` | Set to `1` for debug output |
+
 ## Debugging
 
 ```bash
-# Check which NeoVim would be selected:
-claude-hurl status
-
-# List all sockets:
-claude-hurl list
-
-# Enable debug output:
-CLAUDE_HURL_DEBUG=1 claude-hurl edit /tmp/test.md
+claude-hurl status            # Which NeoVim would be selected
+claude-hurl list              # All discoverable sockets
+CLAUDE_HURL_DEBUG=1 claude-hurl edit /tmp/test.md  # Verbose output
 ```
 
-## Relationship with claudecode.nvim
+## Related
 
-This plugin complements [claudecode.nvim](https://github.com/coder/claudecode.nvim):
-
-- **claude-hurl.nvim** (this plugin): Handles Ctrl+G prompt editing in an existing NeoVim
-- **claudecode.nvim**: IDE integration (selections, diffs, file context)
-
-They can be used independently or together.
+- [claudecode.nvim](https://github.com/coder/claudecode.nvim) — IDE integration for Claude Code (selections, diffs, file context). Can be used alongside this plugin.
