@@ -181,4 +181,5 @@ CLAUDE_HURL_DEBUG=1 claude-hurl edit /tmp/test.md  # Verbose output
 
 ## Related
 
+- [neovim-remote (nvr)](https://github.com/mhinz/neovim-remote) — General-purpose remote NeoVim tool. `VISUAL="nvr --remote-wait"` works for the basic case but requires Python and manual socket management. claude-hurl.nvim adds automatic socket discovery and send-without-closing.
 - [claudecode.nvim](https://github.com/coder/claudecode.nvim) — IDE integration for Claude Code (selections, diffs, file context). Can be used alongside this plugin.
