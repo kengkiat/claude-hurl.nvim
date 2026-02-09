@@ -92,6 +92,16 @@ pid_from_socket() {
   fi
 }
 
+# Find the server socket for a given nvim PID using lsof
+find_socket_for_pid() {
+  local pid="$1"
+  local sock
+  while IFS= read -r sock; do
+    [[ -S "$sock" ]] && verify_socket "$sock" && echo "$sock" && return 0
+  done < <(lsof -U -a -p "$pid" -F n 2>/dev/null | sed -n 's/^n//p')
+  return 1
+}
+
 # Strategy: env — use explicit socket from environment
 discover_env() {
   local sock="${NVIM_CLAUDE_SOCK:-${NVIM_LISTEN_ADDRESS:-}}"
@@ -123,13 +133,20 @@ discover_tmux() {
 
     for nvim_pid in $nvim_pids; do
       debug "Found nvim PID $nvim_pid in tmux pane (parent PID $pane_pid)"
-      # Match this PID to a socket
+      # Find socket directly via lsof instead of filesystem search
+      local sock
+      if sock="$(find_socket_for_pid "$nvim_pid")"; then
+        debug "Matched socket via lsof: $sock"
+        echo "$sock"
+        return 0
+      fi
+      # Fallback: filesystem search with PID matching
       while IFS= read -r sock; do
         [[ -n "$sock" ]] || continue
         local sock_pid
         sock_pid="$(pid_from_socket "$sock")"
         if [[ "$sock_pid" == "$nvim_pid" ]] && verify_socket "$sock"; then
-          debug "Matched socket: $sock"
+          debug "Matched socket via filename: $sock"
           echo "$sock"
           return 0
         fi
