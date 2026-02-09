@@ -5,7 +5,8 @@ Open Claude Code prompts (Ctrl+G) in an existing NeoVim instance instead of spaw
 ## Architecture
 
 - **`bin/claude-hurl`** — Shell script used as `$VISUAL`. Discovers NeoVim socket, creates a FIFO, calls `:ClaudeHurlOpen` via `--remote-send`, blocks on FIFO read.
-- **`lua/claude-hurl/init.lua`** — Plugin entry: `setup()`, user commands, config.
+- **`plugin/claude-hurl.lua`** — Auto-loaded command registration (ClaudeHurlOpen, ClaudeHurlSend, ClaudeHurlSendClose).
+- **`lua/claude-hurl/init.lua`** — Plugin entry: `setup()`, config.
 - **`lua/claude-hurl/signal.lua`** — Buffer lifecycle management + FIFO signaling.
 
 ## Flow

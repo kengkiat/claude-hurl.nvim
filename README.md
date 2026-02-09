@@ -26,12 +26,13 @@ Ctrl+G in Claude Code
 ### lazy.nvim
 
 ```lua
-{
-  "kengkiat/claude-hurl.nvim",
-  config = function()
-    require("claude-hurl").setup()
-  end,
-}
+{ "kengkiat/claude-hurl.nvim", opts = {} }
+```
+
+Commands are registered automatically — no `setup()` call or `cmd` list needed. To customize options:
+
+```lua
+{ "kengkiat/claude-hurl.nvim", opts = { open_cmd = "vsplit" } }
 ```
 
 Then set `$VISUAL` so Claude Code uses the plugin's shell script as its editor.
@@ -63,7 +64,7 @@ git clone https://github.com/kengkiat/claude-hurl.nvim \
   ~/.config/nvim/pack/plugins/start/claude-hurl.nvim
 ```
 
-Add to your NeoVim config:
+Add to your NeoVim config (optional, only needed to customize options):
 
 ```lua
 require("claude-hurl").setup()
@@ -85,10 +86,26 @@ alias claude='VISUAL=~/.config/nvim/pack/plugins/start/claude-hurl.nvim/bin/clau
 | `:ClaudeHurlSendClose` | Save + signal done + close buffer. |
 | `:bd` / `:wq` | Also signals done (fallback via autocmd). |
 
-### Recommended Keybinding
+### Keybindings
+
+With lazy.nvim, define keymaps directly in your plugin spec:
+
+```lua
+{
+  "kengkiat/claude-hurl.nvim",
+  opts = {},
+  keys = {
+    { "<leader>cs", "<cmd>ClaudeHurlSend<cr>", desc = "Send to Claude Code" },
+    { "<leader>cS", "<cmd>ClaudeHurlSendClose<cr>", desc = "Send to Claude Code and close" },
+  },
+}
+```
+
+Or set them manually anywhere in your config:
 
 ```lua
 vim.keymap.set("n", "<leader>cs", "<cmd>ClaudeHurlSend<cr>", { desc = "Send to Claude Code" })
+vim.keymap.set("n", "<leader>cS", "<cmd>ClaudeHurlSendClose<cr>", { desc = "Send to Claude Code and close" })
 ```
 
 ### Shell Subcommands
@@ -124,7 +141,10 @@ alias claude='VISUAL=/path/to/claude-hurl.nvim/bin/claude-hurl claude'
 ### Non-tmux with explicit socket
 
 ```lua
--- In NeoVim config:
+-- lazy.nvim:
+{ "kengkiat/claude-hurl.nvim", opts = { listen_address = "/tmp/nvim-claude.sock" } }
+
+-- Or manually:
 require("claude-hurl").setup({ listen_address = "/tmp/nvim-claude.sock" })
 ```
 
@@ -152,6 +172,8 @@ Or with tmux, just use separate windows — discovery is automatic.
 
 ## Configuration
 
+All options have sensible defaults, so `setup()` is optional. Call it only if you need to customize:
+
 ```lua
 require("claude-hurl").setup({
   listen_address = nil,    -- Start NeoVim server on this path (for non-tmux)
@@ -159,6 +181,12 @@ require("claude-hurl").setup({
   auto_write = true,       -- Auto-save buffer before signaling
   notify = true,           -- Show "Claude waiting" notification
 })
+```
+
+With lazy.nvim, pass these as `opts` instead:
+
+```lua
+{ "kengkiat/claude-hurl.nvim", opts = { open_cmd = "vsplit", notify = false } }
 ```
 
 ## Environment Variables
