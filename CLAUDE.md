@@ -22,6 +22,7 @@ Claude Code uses `$VISUAL` (not `$EDITOR`) for Ctrl+G prompt editing. The `$EDIT
 
 ## Conventions
 
+- Commit messages must not include `Co-Authored-By` lines
 - Shell script: POSIX-compatible bash, shellcheck clean
 - Lua: NeoVim 0.9+ APIs, no external dependencies
 - Socket discovery priority: env var → tmux sibling → CWD match → most recent
