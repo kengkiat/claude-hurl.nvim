@@ -92,13 +92,19 @@ pid_from_socket() {
   fi
 }
 
-# Find the server socket for a given nvim PID using lsof
+# Find the server socket for a given nvim PID using lsof.
+# Checks the PID and its direct children (nvim spawns nvim --embed which owns the socket).
 find_socket_for_pid() {
   local pid="$1"
+  local pids="$pid"
+  local child_pids
+  if child_pids="$(pgrep -P "$pid" 2>/dev/null)"; then
+    pids="$pid,$(echo "$child_pids" | tr '\n' ',' | sed 's/,$//')"
+  fi
   local sock
   while IFS= read -r sock; do
     [[ -S "$sock" ]] && verify_socket "$sock" && echo "$sock" && return 0
-  done < <(lsof -U -a -p "$pid" -F n 2>/dev/null | sed -n 's/^n//p')
+  done < <(lsof -U -a -p "$pids" -F n 2>/dev/null | sed -n 's/^n//p')
   return 1
 }
 
@@ -133,7 +139,6 @@ discover_tmux() {
 
     for nvim_pid in $nvim_pids; do
       debug "Found nvim PID $nvim_pid in tmux pane (parent PID $pane_pid)"
-      # Find socket directly via lsof instead of filesystem search
       local sock
       if sock="$(find_socket_for_pid "$nvim_pid")"; then
         debug "Matched socket via lsof: $sock"
@@ -335,17 +340,15 @@ cmd_edit() {
   trap cleanup EXIT
 
   # Escape file path and signal path for NeoVim command line
-  # We need to escape spaces, backslashes, and special characters
   local escaped_file
   escaped_file="$(printf '%s' "$file" | sed 's/\\/\\\\/g; s/ /\\ /g')"
   local escaped_signal
   escaped_signal="$(printf '%s' "$signal_file" | sed 's/\\/\\\\/g; s/ /\\ /g')"
 
-  # Send command to NeoVim
-  # <C-\><C-n> ensures normal mode first
+  # Send command via --remote-expr (--remote-send crashes some plugin configurations)
   debug "Sending :ClaudeHurlOpen $escaped_file $escaped_signal"
-  nvim --server "$sock" --remote-send \
-    "<C-\\><C-n>:ClaudeHurlOpen $escaped_file $escaped_signal<CR>" \
+  nvim --server "$sock" --remote-expr \
+    "execute('ClaudeHurlOpen $escaped_file $escaped_signal')" \
     || die "Failed to send command to NeoVim at $sock"
 
   # Watchdog: check if NeoVim is still alive every 5 seconds

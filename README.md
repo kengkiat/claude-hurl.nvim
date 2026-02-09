@@ -122,7 +122,7 @@ claude-hurl --fallback-nvim <file>  # Fall back to new NeoVim if none found
 The shell script finds your NeoVim instance using these strategies (in priority order):
 
 1. **Environment variable** — `$NVIM_CLAUDE_SOCK` or `$NVIM_LISTEN_ADDRESS`
-2. **tmux sibling** — NeoVim running in a sibling pane of the same tmux window
+2. **tmux sibling** — NeoVim running in a sibling pane (uses `lsof` to match PID to socket)
 3. **CWD match** — NeoVim with the same working directory
 4. **Most recent** — Most recently created NeoVim socket
 
