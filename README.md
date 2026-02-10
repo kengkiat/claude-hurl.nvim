@@ -26,13 +26,13 @@ Ctrl+G in Claude Code
 ### lazy.nvim
 
 ```lua
-{ "kengkiat/claude-hurl.nvim", opts = {} }
-```
-
-Commands are registered automatically — no `setup()` call or `cmd` list needed. To customize options:
-
-```lua
-{ "kengkiat/claude-hurl.nvim", opts = { open_cmd = "vsplit" } }
+{
+  "kengkiat/claude-hurl.nvim",
+  lazy = false,  -- must be eager so :ClaudeHurlOpen is available when Claude Code calls $VISUAL
+  keys = {
+    { "<leader>ch", "<cmd>ClaudeHurlSend<cr>", desc = "Claude Hurl Send" },
+  },
+}
 ```
 
 Then set `$VISUAL` so Claude Code uses the plugin's shell script as its editor.
