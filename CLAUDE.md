@@ -4,7 +4,7 @@ Open Claude Code prompts (Ctrl+G) in an existing NeoVim instance instead of spaw
 
 ## Architecture
 
-- **`bin/claude-hurl`** — Shell script used as `$VISUAL`. Discovers NeoVim socket, creates a FIFO, calls `:ClaudeHurlOpen` via `--remote-expr`, blocks on FIFO read.
+- **`bin/claude-hurl`** — Shell script used as `$VISUAL`. Discovers NeoVim socket, creates a FIFO, calls `:ClaudeHurlOpen` via `--remote-send`, blocks on FIFO read.
 - **`plugin/claude-hurl.lua`** — Auto-loaded command registration (ClaudeHurlOpen, ClaudeHurlSend, ClaudeHurlSendClose).
 - **`lua/claude-hurl/init.lua`** — Plugin entry: `setup()`, config.
 - **`lua/claude-hurl/signal.lua`** — Buffer lifecycle management + FIFO signaling.
@@ -26,9 +26,7 @@ Claude Code uses `$VISUAL` (not `$EDITOR`) for Ctrl+G prompt editing. The `$EDIT
 - Commit messages must not include `Co-Authored-By` lines
 - Shell script: POSIX-compatible bash, shellcheck clean
 - Lua: NeoVim 0.9+ APIs, no external dependencies
-- Socket discovery priority: env var → tmux sibling (lsof) → CWD match → most recent
-- tmux discovery uses `lsof` to find sockets from nvim PID (+ children), with filesystem fallback
-- Uses `--remote-expr` (not `--remote-send`) to send commands — `--remote-send` crashes some configs
+- Socket discovery priority: env var → tmux sibling → CWD match → most recent
 - All temp files cleaned up via `trap EXIT`
 - `CLAUDE_HURL_NVIM` env var controls the fallback nvim command (for NVIM_APPNAME users)
 
