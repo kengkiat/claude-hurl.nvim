@@ -345,6 +345,8 @@ cmd_edit() {
   ) &
   local watchdog_pid=$!
 
+  echo "Editing in NeoVim — waiting for buffer close…"
+
   # Block until plugin writes to FIFO
   local reason
   reason="$(read -r line < "$signal_file" && echo "$line")" || reason="error"
@@ -354,6 +356,8 @@ cmd_edit() {
   wait "$watchdog_pid" 2>/dev/null || true
 
   debug "Unblocked with reason: $reason"
+
+  clear
 }
 
 # ---------------------------------------------------------------------------
